@@ -1,0 +1,986 @@
+<!doctype html>
+<html>
+
+<head>
+    <meta charset=utf8>
+    <meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover">
+    <style>
+        :root {
+            color-scheme: light;
+            box-sizing: border-box;
+            padding-top: env(safe-area-inset-top, 0px);
+            padding-bottom: env(safe-area-inset-bottom, 0px)
+        }
+
+        html {
+            scroll-padding-top: env(safe-area-inset-top, 0px)
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font: 14px -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #fff;
+            color: #000
+        }
+
+        img {
+            max-width: 100%
+        }
+
+        [hidden]:not([hidden=until-found i]) {
+            display: none !important
+        }
+    </style>
+</head>
+
+<body>
+    <title>Cross Words</title>
+    <meta name="claude:viewport-fit-sides" content="cover">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Martian+Mono:wght@500;700&family=Atkinson+Hyperlegible:wght@400;700&display=swap">
+    <style>
+        /* Layout: one narrow column — scoreboard, par strip, board, turn controls, found words. */
+        :root {
+            --bg: #e9ece6;
+            --panel: #f6f8f3;
+            --ink: #1c2420;
+            --muted: #5d6862;
+            --line: #a7b0a9;
+            --node: #fbfcf9;
+            --p1: #2c7a57;
+            --p1-soft: rgba(44, 122, 87, 0.16);
+            --p2: #3a5fae;
+            --p2-soft: rgba(58, 95, 174, 0.16);
+            --hover: rgba(28, 36, 32, 0.07);
+            --font-tile: "Martian Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+            --font-ui: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root:not([data-theme="light"]) {
+                --bg: #131815;
+                --panel: #1b221e;
+                --ink: #e4eae5;
+                --muted: #95a29a;
+                --line: #48544d;
+                --node: #222b26;
+                --p1: #62c595;
+                --p1-soft: rgba(98, 197, 149, 0.18);
+                --p2: #86a9ea;
+                --p2-soft: rgba(134, 169, 234, 0.18);
+                --hover: rgba(228, 234, 229, 0.07);
+                color-scheme: dark;
+            }
+        }
+
+        :root[data-theme="dark"] {
+            --bg: #131815;
+            --panel: #1b221e;
+            --ink: #e4eae5;
+            --muted: #95a29a;
+            --line: #48544d;
+            --node: #222b26;
+            --p1: #62c595;
+            --p1-soft: rgba(98, 197, 149, 0.18);
+            --p2: #86a9ea;
+            --p2-soft: rgba(134, 169, 234, 0.18);
+            --hover: rgba(228, 234, 229, 0.07);
+            color-scheme: dark;
+        }
+
+        [hidden] {
+            display: none !important;
+        }
+
+        html,
+        body {
+            height: 100%;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--ink);
+            font-family: var(--font-ui);
+            font-size: 15px;
+            padding-left: max(16px, env(safe-area-inset-left, 0px));
+            padding-right: max(16px, env(safe-area-inset-right, 0px));
+            padding-block: 20px;
+            box-sizing: border-box;
+        }
+
+        .wrap {
+            max-width: 440px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        h1 {
+            font-family: var(--font-tile);
+            font-weight: 700;
+            font-size: 1.15rem;
+            letter-spacing: -0.01em;
+            margin: 0;
+        }
+
+        .players {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .player {
+            background: var(--panel);
+            border-radius: 12px;
+            padding: 10px 12px;
+            border: 2px solid transparent;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .player .name {
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 7px;
+        }
+
+        .player .dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+
+        #pc0 .dot {
+            background: var(--p1);
+        }
+
+        #pc1 .dot {
+            background: var(--p2);
+        }
+
+        #pc0.active {
+            border-color: var(--p1);
+        }
+
+        #pc1.active {
+            border-color: var(--p2);
+        }
+
+        .player .turn {
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--muted);
+        }
+
+        .player:not(.active) .turn {
+            visibility: hidden;
+        }
+
+        .player b {
+            font-family: var(--font-tile);
+            font-size: 1.4rem;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .strip {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            flex-wrap: wrap;
+            font-size: 0.88rem;
+            color: var(--muted);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .strip strong {
+            color: var(--ink);
+            font-family: var(--font-tile);
+        }
+
+        .board {
+            background: var(--panel);
+            border-radius: 16px;
+            padding: 6px;
+        }
+
+        .board,
+        .board * {
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        svg {
+            display: block;
+            width: 100%;
+            max-width: 100%;
+            height: auto;
+            touch-action: manipulation;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+            cursor: pointer;
+            outline: none;
+        }
+
+        .edge {
+            stroke: var(--line);
+            stroke-width: 2;
+        }
+
+        .spine {
+            stroke: transparent;
+            stroke-width: 10;
+            stroke-linecap: round;
+            transition: stroke 0.25s;
+        }
+
+        .spine.f0 {
+            stroke: var(--p1-soft);
+        }
+
+        .spine.f1 {
+            stroke: var(--p2-soft);
+        }
+
+        .hl {
+            fill: var(--hover);
+            stroke: none;
+        }
+
+        .spin {
+            fill: var(--hover);
+            stroke: var(--muted);
+            stroke-width: 2;
+            stroke-linejoin: round;
+        }
+
+        .tile circle {
+            fill: var(--node);
+            stroke: var(--line);
+            stroke-width: 2;
+            transition: stroke 0.25s;
+        }
+
+        .tile text {
+            fill: var(--ink);
+            font-family: var(--font-tile);
+            font-weight: 700;
+            font-size: 24px;
+            text-anchor: middle;
+            dominant-baseline: central;
+            pointer-events: none;
+        }
+
+        .tile.f0 circle {
+            stroke: var(--p1);
+            stroke-width: 2.5;
+        }
+
+        .tile.f1 circle {
+            stroke: var(--p2);
+            stroke-width: 2.5;
+        }
+
+        .tile.old circle {
+            stroke: var(--ink);
+            stroke-width: 2.5;
+        }
+
+        .msg {
+            min-height: 2.6em;
+            text-align: center;
+            color: var(--muted);
+            line-height: 1.35;
+        }
+
+        .msg strong {
+            color: var(--ink);
+        }
+
+        .msg .alt {
+            display: block;
+            font-size: 0.85rem;
+            margin-top: 2px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 8px;
+        }
+
+        .controls button {
+            flex: 1;
+            font: inherit;
+            font-weight: 700;
+            padding: 10px 6px;
+            border-radius: 10px;
+            border: 1.5px solid var(--line);
+            background: var(--node);
+            color: var(--ink);
+            cursor: pointer;
+        }
+
+        .controls button.primary {
+            background: var(--ink);
+            color: var(--bg);
+            border-color: var(--ink);
+        }
+
+        .controls button:disabled {
+            opacity: 0.4;
+            cursor: default;
+        }
+
+        .ask {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            justify-content: center;
+            flex-wrap: wrap;
+            background: var(--panel);
+            border-radius: 10px;
+            padding: 10px;
+        }
+
+        .ask button {
+            font: inherit;
+            font-weight: 700;
+            padding: 7px 12px;
+            border-radius: 8px;
+            border: 1.5px solid var(--line);
+            background: var(--node);
+            color: var(--ink);
+            cursor: pointer;
+        }
+
+        .links {
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+        }
+
+        .link {
+            font: inherit;
+            font-size: 0.9rem;
+            color: var(--muted);
+            background: none;
+            border: 0;
+            padding: 4px 8px;
+            text-decoration: underline;
+            text-underline-offset: 3px;
+            cursor: pointer;
+        }
+
+        .link:disabled {
+            opacity: 0.4;
+            cursor: default;
+        }
+
+        button:focus-visible {
+            outline: 2px solid var(--p1);
+            outline-offset: 2px;
+        }
+
+        .found h2 {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--muted);
+            margin: 0 0 6px;
+            font-weight: 700;
+        }
+
+        .chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .chip {
+            font-family: var(--font-tile);
+            font-weight: 700;
+            font-size: 0.8rem;
+            padding: 3px 8px;
+            border-radius: 6px;
+        }
+
+        .chip.f0 {
+            background: var(--p1-soft);
+            color: var(--p1);
+        }
+
+        .chip.f1 {
+            background: var(--p2-soft);
+            color: var(--p2);
+        }
+
+        .chip.none {
+            background: transparent;
+            color: var(--muted);
+            border: 1.5px dashed var(--line);
+        }
+
+        .help {
+            font-size: 0.85rem;
+            color: var(--muted);
+            line-height: 1.45;
+            margin: 0;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+
+            .spine,
+            .tile circle {
+                transition: none;
+            }
+        }
+
+        [hidden] {
+            display: none !important;
+        }
+
+        .opts {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .opts label {
+            flex: 1;
+            min-width: 150px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--muted);
+            font-weight: 700;
+        }
+
+        .opts select {
+            font: inherit;
+            font-size: 0.92rem;
+            text-transform: none;
+            letter-spacing: 0;
+            font-weight: 400;
+            padding: 8px;
+            border-radius: 8px;
+            border: 1.5px solid var(--line);
+            background: var(--node);
+            color: var(--ink);
+        }
+
+        .opts select:focus-visible {
+            outline: 2px solid var(--p1);
+            outline-offset: 1px;
+        }
+
+        ul.help {
+            padding-left: 1.1em;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .opts input[type=range] {
+            width: 100%;
+            accent-color: var(--p2);
+            margin: 6px 0 0;
+        }
+
+        .opts output {
+            color: var(--ink);
+        }
+
+        .edge {
+            stroke-width: 2.5;
+            stroke-dasharray: 0.1 8;
+            stroke-linecap: round;
+            opacity: 0.6;
+        }
+
+        /* dotted, quiet base lines */
+        .sel {
+            fill: none;
+            stroke: var(--muted);
+            stroke-width: 2.5;
+            stroke-dasharray: 5 4;
+        }
+
+        .link {
+            stroke: var(--muted);
+            stroke-width: 2;
+            stroke-dasharray: 4 5;
+        }
+    </style>
+
+    <div class="wrap">
+        <h1>Cross Words</h1>
+        <div class="opts">
+            <label>Opponent
+                <select id="optOpp">
+                    <option value="human">Another player</option>
+                    <option value="ai">Computer</option>
+                </select>
+            </label>
+            <label id="skillBox"><span>Best swap: <output id="rateOut">40%</output> of turns</span>
+                <input type="range" id="optRate" min="0" max="100" step="5" value="40">
+            </label>
+        </div>
+        <div class="players">
+            <div class="player" id="pc0">
+                <div>
+                    <div class="name"><span class="dot"></span><span id="nm0">Player 1</span></div>
+                    <div class="turn" id="tn0">Your turn</div>
+                </div><b id="sc0">0</b>
+            </div>
+            <div class="player" id="pc1">
+                <div>
+                    <div class="name"><span class="dot"></span><span id="nm1">Player 2</span></div>
+                    <div class="turn" id="tn1">Your turn</div>
+                </div><b id="sc1">0</b>
+            </div>
+        </div>
+        <div class="strip">
+            <span>Swaps <strong id="rot">0</strong><span id="goal"></span></span>
+        </div>
+        <div class="board" id="board"><svg id="svg" viewBox="0 0 304 304" aria-label="Puzzle board"
+                focusable="false"></svg></div>
+        <div class="found">
+            <h2 id="foundHead">Words found</h2>
+            <div class="chips" id="chips"></div>
+        </div>
+        <div class="msg" id="msg" aria-live="polite"></div>
+        <div class="controls">
+            <button id="undo">Undo</button>
+            <button id="skip" class="primary">Skip turn</button>
+        </div>
+        <div class="links">
+            <button id="next" class="link">New game</button>
+        </div>
+        <ul class="help" id="help">
+            <li>Tap two letters to swap them. Your turn ends when a row, a column, or a diagonal spells a new word.</li>
+            <li>Rows and diagonals read left to right, columns top to bottom.</li>
+            <li>Each new word scores 3 points. One swap can make several.</li>
+            <li>Each swap costs a point, but a turn never scores below zero.</li>
+            <li>The game ends when every word has been found.</li>
+        </ul>
+    </div>
+
+    <script>
+        const W3L = "ACE ACT ADD ADO AGE AGO AHA AID AIL AIM AIR ALE ALL AMP AND ANT ANY APE APP APT ARC ARE ARK ARM ART ASH ASK ASS ATE AWE AXE AYE BAD BAG BAN BAR BAT BAY BED BEE BEG BET BIB BID BIG BIN BIO BIT BOA BOB BOG BOO BOT BOW BOX BOY BRA BRO BUD BUG BUM BUN BUS BUT BUY BYE CAB CAN CAP CAR CAT CAW COB COD COG CON COO COP COT COW COY CRY CUB CUE CUP CUT DAB DAD DAM DAY DEN DEW DID DIE DIG DIM DIN DIP DOC DOE DOG DON DOT DRY DUB DUD DUE DUG DUO DYE EAR EAT EBB ECO EEL EGG EGO EKE ELF ELK ELM EMU END EON ERA ERR EVE EWE EYE FAD FAN FAR FAT FAX FED FEE FEN FEW FIB FIG FIN FIR FIT FIX FLU FLY FOE FOG FOR FOX FRY FUN FUR GAG GAL GAP GAS GAY GEL GEM GET GIG GIN GOD GOO GOT GUM GUN GUT GUY GYM HAD HAG HAM HAS HAT HAW HAY HEM HEN HER HEW HEX HEY HID HIM HIP HIS HIT HOE HOG HOP HOT HOW HUB HUE HUG HUM HUT ICE ICY ILL IMP INK INN ION IRE IRK ITS IVY JAB JAM JAR JAW JAY JET JIG JOB JOG JOT JOY JUG JUT KEG KEN KEY KID KIN KIT LAB LAD LAG LAP LAW LAX LAY LED LEG LET LID LIE LIP LIT LOB LOG LOO LOT LOW LOX LUG MAD MAN MAP MAR MAT MAX MAY MEN MET MIC MIX MOB MOM MOO MOP MOW MUD MUG MUM NAB NAG NAP NAY NET NEW NIL NIP NIX NOD NOR NOT NOW NUN NUT OAF OAK OAR OAT ODD ODE OFF OHM OIL OLD ONE OPT ORB ORE OUR OUT OWE OWL OWN PAD PAL PAN PAR PAT PAW PAY PEA PEE PEG PEN PEP PER PET PEW PIE PIG PIN PIT PLY POD POP POT POX PRO PRY PUB PUG PUN PUP PUT RAG RAM RAN RAP RAT RAW RAY RED REP REV RIB RID RIG RIM RIP ROB ROD ROE ROT ROW RUB RUG RUM RUN RUT RYE SAD SAG SAP SAT SAW SAX SAY SEA SEE SET SEW SEX SHE SHY SIN SIP SIR SIT SIX SKI SKY SLY SOB SOD SON SOW SOY SPA SPY SUB SUE SUM SUN TAB TAD TAG TAN TAP TAR TAX TEA TEE TEN THE TIE TIN TIP TOE TON TOO TOP TOT TOW TOY TRY TUB TUG TWO UGH URN USE VAN VAT VET VEX VIA VOW WAD WAG WAN WAR WAS WAX WAY WEB WED WEE WET WHO WHY WIG WIN WIT WOE WOK WON WOO WOW WRY YAK YAM YAP YEN YES YET YOU ZAP ZEN ZIP ZOO".toLowerCase().split(" ");
+        const W4L = "ABET ABLE ABLY ACHE ACHY ACID ACNE ACRE AFAR AGED AGOG AIDE AIDS AIRY AJAR AKIN ALLY ALOE ALSO ALTO AMEN AMID ANEW ANTE ANTI APEX ARCH AREA ARIA ARID ARMY ASHY ATOM ATOP AUNT AURA AUTO AVID AVOW AWAY AWRY AXIS AXLE BABY BACK BAIL BAIT BAKE BALD BALE BALK BALL BALM BAND BANE BANG BANK BARB BARE BARK BARN BASE BASH BASK BASS BATE BATH BEAD BEAK BEAM BEAN BEAR BEAT BECK BEEF BEEN BEEP BEER BEET BELL BELT BEND BENT BEST BIKE BILE BILL BIND BIRD BITE BLED BLIP BLOB BLOT BLOW BLUE BLUR BOAR BOAT BODY BOIL BOLD BOLT BOMB BOND BONE BOOK BOOM BOOT BORE BORN BOSS BOTH BOUT BOWL BRAG BRAN BRAT BRED BREW BRIM BROW BUCK BUFF BULB BULK BULL BUMP BUNK BUOY BURN BURY BUSH BUST BUSY BUTT BUZZ CAFE CAGE CAKE CALF CALL CALM CAME CAMP CANE CAPE CARD CARE CARP CART CASE CASH CASK CAST CAVE CEDE CELL CENT CHAP CHAT CHEF CHEW CHIC CHIN CHIP CHOP CHUG CHUM CITY CLAD CLAM CLAN CLAP CLAW CLAY CLIP CLOD CLOG CLOT CLOY CLUB CLUE COAL COAT COAX COCK CODE COIL COIN COKE COLA COLD COLT COMA COMB COME CONE COOK COOL COPE COPY CORD CORE CORK CORN COST COUP COVE COZY CRAB CRAG CRAM CREW CRIB CROP CROW CRUX CUBE CUFF CULT CURB CURE CURL CURT CUSP CUTE CYAN DAFT DALE DAME DAMN DAMP DARE DARK DARN DART DASH DATA DATE DAUB DAWN DAZE DEAD DEAF DEAL DEAN DEAR DEBT DECK DEED DEEM DEEP DEER DEFT DEFY DENT DENY DESK DIAL DICE DIET DIKE DILL DINE DING DIRE DIRT DISC DISH DISK DIVA DIVE DOCK DOER DOES DOLE DOLL DOME DONE DOOM DOOR DOPE DOSE DOTE DOUR DOVE DOWN DOZE DRAB DRAG DRAW DRIP DROP DRUG DRUM DUAL DUCK DUCT DUEL DUKE DULL DULY DUMB DUMP DUNE DUNG DUNK DUSK DUST DUTY DYED EACH EARL EARN EASE EAST EASY ECHO EDGE EDGY EDIT ELSE EMIT ENVY EPIC ETCH EVEN EVER EVIL EXAM EXIT EYED FACE FACT FADE FAIL FAIR FAKE FALL FAME FANG FARE FARM FAST FATE FEAR FEAT FEED FEEL FEET FELL FELT FEND FERN FEUD FILE FILL FILM FIND FINE FIRE FIRM FISH FIST FIVE FIZZ FLAG FLAK FLAP FLAT FLAW FLAX FLEA FLED FLEE FLEW FLEX FLIP FLOG FLOP FLOW FLUX FOAM FOIL FOLD FOLK FOND FONT FOOD FOOL FOOT FORE FORK FORM FORT FOUL FOUR FOWL FRAY FREE FRET FROG FROM FUEL FULL FUME FUND FUNK FURY FUSE FUSS GAIN GAIT GALE GALL GAME GANG GAPE GASP GATE GAVE GAZE GEAR GENE GERM GIFT GILD GIRL GIST GIVE GLAD GLEE GLEN GLIB GLOW GLUE GLUM GNAT GNAW GOAD GOAL GOAT GOLD GOLF GONE GOOD GORY GOWN GRAB GRAM GRAY GREW GRID GRIM GRIN GRIP GRIT GROW GRUB GULF GULP GUSH GUST GUTS HACK HAIL HAIR HALF HALL HALO HALT HAND HANG HANK HARD HARE HARM HARP HASH HATE HAUL HAVE HAWK HAZE HAZY HEAD HEAL HEAP HEAR HEAT HEED HEEL HEIR HELD HELL HELM HELP HERB HERD HERE HERO HERS HIDE HIGH HIKE HILL HIND HINT HIRE HISS HIVE HOAX HOLD HOLE HOLY HOME HOOD HOOF HOOK HOOP HOOT HOPE HORN HOSE HOST HOUR HOWL HUGE HUMP HUNG HUNK HUNT HURL HURT HUSH HUSK HYPE ICKY ICON IDEA IDLE IDOL INCH INFO INKY INTO IRIS IRON ITCH ITEM JADE JAIL JAZZ JEAN JEEP JEER JELL JERK JEST JINX JIVE JOIN JOKE JOLT JUMP JUNK JURY JUST KEEL KEEN KEEP KELP KEPT KICK KILL KILN KIND KING KISS KNEE KNEW KNIT KNOB KNOT KNOW LACE LACK LACY LADY LAID LAIR LAKE LAMB LAME LAMP LAND LANE LANK LARD LARK LASH LAST LATE LAWN LAZY LEAD LEAF LEAK LEAN LEAP LEEK LEFT LEND LENS LENT LESS LEVY LIAR LICK LIFE LIFT LIKE LILY LIMB LIME LIMP LINE LINK LINT LION LIPS LISP LIST LIVE LOAD LOAF LOAN LOBE LOCK LOFT LOIN LONE LONG LOOK LOOM LOOP LOOT LORD LORE LOSE LOSS LOST LOTS LOUD LOVE LUBE LUCK LULL LUMP LUNG LURE LURK LUSH LUST LYRE MADE MAID MAIL MAIM MAIN MAKE MALE MALL MALT MANE MANY MARE MARK MART MASH MASK MASS MAST MATE MATH MAZE MEAL MEAN MEAT MEEK MEET MELT MEND MENU MEOW MERE MESH MESS MICE MILD MILE MILK MILL MIME MIND MINE MINI MINK MINT MISS MIST MOAN MOAT MOCK MODE MOLD MOLE MONK MOOD MOON MOOR MOOT MOPE MORE MOSS MOST MOTH MOVE MUCH MULE MULL MUSE MUSH MUSK MUST MUTE MYTH NAIL NAME NAVY NEAR NEAT NECK NEED NEON NEST NEWS NEWT NEXT NICE NICK NINE NODE NONE NOOK NOON NOPE NORM NOSE NOSY NOTE NOUN NOVA NULL NUMB OATH OATS OBEY OBOE ODDS OILY OKAY OMEN OMIT ONCE ONLY ONTO ONUS ONYX OOZE OPAL OPEN ORAL OURS OVAL OVEN OVER OXEN PACE PACK PACT PAGE PAID PAIL PAIN PAIR PALE PALM PANG PANT PARE PARK PART PASS PAST PATH PAWN PEAK PEAL PEAR PEAT PECK PEEK PEEL PEEP PEER PELT PERK PERT PEST PICK PIER PIKE PILE PILL PINE PING PINK PINT PIPE PITY PLAN PLAY PLEA PLOD PLOT PLOY PLUG PLUM PLUS POEM POET POKE POLE POLL POMP POND PONY POOL POOR POPS PORE PORK PORT POSE POSH POST POUR POUT PRAY PREY PROD PROM PROP PROS PUFF PULL PULP PUMP PUNK PUNY PURE PURR PUSH PYRE QUAD QUID QUIP QUIT QUIZ RACE RACK RAFT RAGE RAID RAIL RAIN RAKE RAMP RANG RANK RANT RAPT RARE RASH RASP RATE RAVE READ REAL REAP REAR REED REEF REEK REEL REIN RELY REND RENT REST RICE RICH RIDE RIFE RIFT RILE RIND RING RIOT RIPE RISE RISK RITE ROAD ROAM ROAR ROBE ROCK ROIL ROLE ROLL ROMP ROOF ROOK ROOM ROOT ROPE ROSE ROSY ROVE RUBY RUDE RUIN RULE RUNE RUNG RUSE RUSH RUST SACK SAFE SAGE SAID SAIL SAKE SALE SALT SAME SAND SANE SANG SANK SAVE SCAM SCAN SCAR SCUM SEAL SEAM SEAT SECT SEED SEEK SEEM SEEN SEEP SELF SELL SEMI SEND SENT SERF SHAM SHED SHIM SHIN SHIP SHOE SHOP SHOT SHOW SHUN SHUT SICK SIDE SIFT SIGH SIGN SILK SILL SILO SING SINK SITE SIZE SKEW SKID SKIM SKIN SKIP SKIT SLAB SLAM SLAP SLAY SLED SLID SLIM SLIP SLIT SLOG SLOT SLOW SLUM SMUG SNAG SNAP SNIP SNOB SNOW SNUG SOAK SOAP SOAR SOCK SODA SOFA SOFT SOIL SOLD SOLE SOLO SOME SONG SOON SOOT SORE SORT SOUL SOUP SOUR SPAM SPAN SPED SPIN SPIT SPOT SPRY SPUN SPUR STAB STAR STAY STEM STEP STEW STIR STOP STOW STUB STUD STUN SUCH SUIT SULK SUNG SUNK SURE SURF SWAM SWAN SWAP SWAT SWAY SWIM TACK TACT TAIL TAKE TALE TALK TALL TAME TANK TAPE TART TASK TAUT TAXI TEAL TEAM TEAR TEEM TEEN TELL TEMP TEND TENT TERM TEST TEXT THAN THAT THAW THEE THEM THEN THEY THIN THIS THUD THUG THUS TICK TIDE TIDY TILE TILL TILT TIME TINT TINY TIPS TIRE TOAD TOIL TOLD TOLL TOMB TOME TONE TOOK TOOL TORE TORN TOSS TOUR TOWN TRAM TRAP TRAY TREE TREY TRIM TRIO TRIP TRUE TSAR TUBE TUCK TUNA TUNE TURF TURN TUSK TWIG TWIN TWIT TYPE UGLY UNDO UNIT UPON URGE USED USER VAIN VANE VARY VASE VAST VEAL VEIL VEIN VENT VERB VERY VEST VETO VIAL VIBE VICE VIEW VILE VINE VISA VOID VOLT VOTE WADE WAFT WAGE WAIL WAIT WAKE WALK WALL WAND WANE WANT WARD WARM WARN WARP WARY WASH WAVE WEAK WEAR WEED WEEK WEEP WELL WENT WEPT WERE WEST WHAT WHEN WHET WHIM WHIP WHIZ WHOM WIDE WIFE WILD WILL WILY WIMP WIND WINE WING WINK WIPE WIRE WISE WISH WISP WITH WITS WOKE WOLF WOMB WOOD WOOF WOOL WORD WORE WORK WORM WORN WOVE WRAP WRIT YANK YARD YARN YAWN YEAR YELL YELP YOGA YOKE YOLK YOUR YOWL ZEAL ZERO ZEST ZINC ZONE ZOOM".toLowerCase().split(" ");
+        const DICT = { 3: new Set(W3L), 4: new Set(W4L) };
+        const $ = id => document.getElementById(id);
+
+        // ---- board: 3x3 grid; rows and diagonals read left to right, columns top to bottom
+        //     0 1 2
+        //     3 4 5
+        //     6 7 8
+        const S = 96, OX = 56, OY = 56, N = 9;
+        const P = [...Array(N).keys()].map(i => [OX + (i % 3) * S, OY + Math.floor(i / 3) * S]);
+        const LINES = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [0, 3, 6], [1, 4, 7], [2, 5, 8], [0, 4, 8], [6, 4, 2]];
+        const SWAPS = []; // move i swaps the two nodes SWAPS[i]; a swap undoes itself
+        for (let a = 0; a < N; a++) for (let c = a + 1; c < N; c++) SWAPS.push([a, c]);
+        const PERMS = SWAPS.map(([a, c]) => { const p = [...Array(N).keys()]; p[a] = c; p[c] = a; return p; });
+        const swapIndex = (a, c) => SWAPS.findIndex(([x, y]) => (x === a && y === c) || (x === c && y === a));
+        const apply = (s, p) => { let r = ""; for (let i = 0; i < N; i++) r += s[p[i]]; return r; };
+        const lineWords = s => LINES.map(l => s[l[0]] + s[l[1]] + s[l[2]]);
+
+        // ---- dealing a board
+        const rnd = n => Math.floor(Math.random() * n);
+        function countMap(s) { const m = {}; for (const c of s) m[c] = (m[c] || 0) + 1; return m; }
+        function fits(m, w) { const r = { ...m }; for (const c of w) { if (!r[c]) return false; r[c]--; } return true; }
+        function shuffle(s) { const a = s.split(""); for (let i = a.length - 1; i > 0; i--) { const j = rnd(i + 1);[a[i], a[j]] = [a[j], a[i]]; } return a.join(""); }
+        function deal(target) {
+            for (let tries = 0; tries < 8000; tries++) {
+                const sol = W3L[rnd(W3L.length)] + W3L[rnd(W3L.length)] + W3L[rnd(W3L.length)];
+                const m = countMap(sol);
+                const w3 = W3L.filter(w => fits(m, w));
+                if (target) { if (w3.length * 3 < 2 * target + 5 || w3.length * 3 > 2 * target + 30) continue; }
+                else if (w3.length < 16 || w3.length > 24) continue;
+                let s;
+                do { s = shuffle(sol); } while (lineWords(s).some(w => DICT[3].has(w)));
+                return { start: s, words: w3 };
+            }
+        }
+
+        // ---- analysis: par for each word length, and (for the computer) the best plan.
+        // A turn ends the moment a rotation forms a new word, so the search never passes through such a state.
+        const CAP = 4;
+        const HARD_BEST = 0.4; // how often Hard plays its best-scoring swap
+        const REWINDS = 3;
+        function analyze(s, rem3, rem4, mode) {
+            const R3 = new Set(rem3);
+            let p3 = R3.size ? null : 99;
+            const parent = new Map([[s, null]]);
+            const cands = [];
+            let f = [s];
+            for (let d = 1; d <= CAP && f.length; d++) {
+                if (p3 !== null && !mode) break;
+                if (p3 !== null && mode && d > p3 + 1) break;
+                const nf = [];
+                for (const x of f) for (let mv = 0; mv < PERMS.length; mv++) {
+                    const p = PERMS[mv];
+                    let y = ""; for (let i = 0; i < N; i++) y += x[p[i]];
+                    if (parent.has(y)) continue;
+                    parent.set(y, [x, mv]);
+                    const words = [];
+                    for (const l of LINES) { const w = y[l[0]] + y[l[1]] + y[l[2]]; if (R3.has(w) && !words.includes(w)) words.push(w); }
+                    if (words.length) {
+                        if (p3 === null) p3 = d;
+                        if (mode) cands.push({ y, d, words });
+                    } else nf.push(y);
+                }
+                f = nf;
+            }
+            const par = { 3: p3 === null ? CAP + 1 : p3 };
+            if (!mode) return { par };
+            const pathTo = y => { const path = []; for (let z = y; parent.get(z); z = parent.get(z)[0]) path.unshift(parent.get(z)[1]); return path; };
+            const scoreOf = c => 3 * c.words.length - c.d; // each word is worth 3, each swap costs 1
+            let pick = null;
+            if (String(mode).startsWith("hard")) {
+                if (Math.random() < (parseFloat(String(mode).split(":")[1]) || 0)) { // the slider sets how often it plays its best swap
+                    for (const c of cands) { c.pts = scoreOf(c); if (!pick || c.pts > pick.pts || (c.pts === pick.pts && c.d < pick.d)) pick = c; }
+                } else if (cands.length) { const dmin = Math.min(...cands.map(c => c.d)); const opts = cands.filter(c => c.d === dmin); pick = opts[Math.floor(Math.random() * opts.length)]; }
+            } else if (mode === "medium") {
+                // a random word at the fewest swaps; it doesn't look for swaps that make several words at once
+                if (cands.length) { const dmin = Math.min(...cands.map(c => c.d)); const opts = cands.filter(c => c.d === dmin); pick = opts[Math.floor(Math.random() * opts.length)]; }
+            } else {
+                // easy: any word within 2 rotations, picked at random; otherwise often skips
+                const near = cands.filter(c => c.d <= 2);
+                if (near.length) pick = near[Math.floor(Math.random() * near.length)];
+                else if (cands.length && Math.random() < 0.4) { const dmin = Math.min(...cands.map(c => c.d)); const opts = cands.filter(c => c.d === dmin); pick = opts[Math.floor(Math.random() * opts.length)]; }
+            }
+            return { par, path: pick ? pathTo(pick.y) : null };
+        }
+        let worker = null, jobId = 0;
+        const pending = new Map();
+        try {
+            const src = `const HARD_BEST = ${HARD_BEST}; const PERMS = ${JSON.stringify(PERMS)}; const LINES = ${JSON.stringify(LINES)}; const N = ${N}; const CAP = ${CAP};
+        ${analyze.toString()}
+        onmessage = e => { const { id, s, rem3, rem4, mode } = e.data; postMessage({ id, res: analyze(s, rem3, rem4, mode) }); };`;
+            worker = new Worker(URL.createObjectURL(new Blob([src], { type: "text/javascript" })));
+            worker.onmessage = e => { const r = pending.get(e.data.id); if (r) { pending.delete(e.data.id); r(e.data.res); } };
+            worker.onerror = () => { worker = null; };
+        } catch (e) { worker = null; }
+        function analyzeAsync(s, rem3, rem4, mode) {
+            if (!worker) return new Promise(res => setTimeout(() => res(analyze(s, rem3, rem4, mode)), 0));
+            const id = ++jobId;
+            return new Promise(res => {
+                pending.set(id, res); worker.postMessage({ id, s, rem3, rem4, mode });
+                setTimeout(() => { if (pending.has(id)) { pending.delete(id); res(analyze(s, rem3, rem4, mode)); } }, 10000);
+            });
+        }
+
+        // which par applies to the words one turn made
+        const refFor = (par, ws) => Math.max(...ws.map(w => par[w.length]));
+
+        // ---- rendering
+        const NS = "http://www.w3.org/2000/svg";
+        const svg = $("svg");
+        const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); parent.appendChild(e); return e; };
+        const gSp = el("g", {}, svg), gHl = el("g", {}, svg), gEd = el("g", {}, svg), gSpin = el("g", {}, svg), gTi = el("g", {}, svg);
+        const spines = LINES.map(l => el("line", { class: "spine", x1: P[l[0]][0], y1: P[l[0]][1], x2: P[l[l.length - 1]][0], y2: P[l[l.length - 1]][1] }, gSp));
+        const selRing = el("circle", { class: "sel", r: 32, cx: 0, cy: 0 }, gHl); selRing.style.display = "none";
+        const link = el("line", { class: "link" }, gSpin); link.style.display = "none";
+        for (const l of LINES) for (let k = 0; k < 2; k++)
+            el("line", { class: "edge", x1: P[l[k]][0], y1: P[l[k]][1], x2: P[l[k + 1]][0], y2: P[l[k + 1]][1] }, gEd);
+
+        // ---- settings
+        let opp = "ai", bestRate = 40, target = 0, firstPlayer = 0, showAll = true;
+        try {
+            const o = localStorage.getItem("duel-opp"); if (["human", "ai"].includes(o)) opp = o;
+            const k = parseInt(localStorage.getItem("duel-rate")); if (k >= 0 && k <= 100) bestRate = k;
+        } catch (e) { }
+        $("optOpp").value = opp; $("optRate").value = bestRate; $("rateOut").textContent = bestRate + "%";
+        $("skillBox").hidden = opp !== "ai";
+
+        let tiles = [];
+        let game = null;
+        let aiTimer = null;
+
+        const isAI = i => game.opp !== "human" && i === 1;
+        const nameOf = i => game.opp === "human" ? `Player ${i + 1}` : (i === 0 ? "You" : "Computer");
+        const verb = (i, a, b) => (game.opp !== "human" && i === 0) ? a : b; // "You spell" vs "Computer spells"
+        const started = () => Object.keys(game.found).length > 0 || game.rotations > 0 || game.turns > 0;
+        const humanTurn = () => !game.over && !game.busy && !game.waiting && !isAI(game.player);
+
+        function buildTiles(start) {
+            gTi.innerHTML = ""; tiles = [];
+            for (let i = 0; i < N; i++) {
+                const g = el("g", { class: "tile" }, gTi);
+                el("circle", { r: 25, cx: 0, cy: 0 }, g);
+                const t = el("text", { x: 0, y: 1 }, g); t.textContent = start[i].toUpperCase();
+                tiles.push({ g, ch: start[i] });
+            }
+        }
+        const stateStr = () => game.pos.map(t => tiles[t].ch).join("");
+        const place = (t, x, y) => { tiles[t].g.style.transform = `translate(${x}px, ${y}px)`; };
+        const fmtPar = v => v == null ? "…" : v > CAP ? (CAP + 1) + "+" : v;
+        const remaining = len => game.words.filter(w => w.length === len && !(w in game.found));
+
+        function updatePanel() {
+            [0, 1].forEach(i => {
+                $("pc" + i).classList.toggle("active", !game.over && game.player === i);
+                $("nm" + i).textContent = nameOf(i);
+                $("tn" + i).textContent = isAI(i) ? (game.busy ? "Thinking…" : "Playing") : (game.opp === "human" ? "Your turn" : "Your turn");
+                $("sc" + i).textContent = game.scores[i];
+            });
+            $("rot").textContent = game.rotations;
+            $("goal").textContent = game.target ? ` · playing to ${game.target}` : "";
+            const r3 = remaining(3).length, r4 = remaining(4).length;
+            const can = humanTurn();
+            $("undo").disabled = !can || game.lastMove == null;
+            $("skip").disabled = !can;
+        }
+        function draw() {
+            game.pos.forEach((t, node) => place(t, P[node][0], P[node][1]));
+            const words = lineWords(stateStr());
+            // words just scored show in the finder's color; any other repeat of a found word shows as a plain outline.
+            // Lines cross, so a node takes the strongest state of any line through it.
+            const nodeOwner = Array(N).fill(-1), nodeOld = Array(N).fill(false);
+            LINES.forEach((l, i) => {
+                const found = words[i] in game.found, fresh = found && game.fresh.includes(words[i]);
+                const owner = fresh ? game.found[words[i]] : -1;
+                spines[i].classList.toggle("f0", owner === 0); spines[i].classList.toggle("f1", owner === 1);
+                l.forEach(n => { if (owner >= 0) nodeOwner[n] = owner; else if (found) nodeOld[n] = true; });
+            });
+            for (let n = 0; n < N; n++) {
+                const g = tiles[game.pos[n]].g, o = nodeOwner[n];
+                g.classList.toggle("f0", o === 0); g.classList.toggle("f1", o === 1); g.classList.toggle("old", o < 0 && nodeOld[n]);
+            }
+            updatePanel();
+            const chips = $("chips"); chips.innerHTML = "";
+            const order = Object.keys(game.found);
+            const chip = (w, cls) => { const c = document.createElement("span"); c.className = "chip " + cls; c.textContent = w.toUpperCase(); chips.appendChild(c); };
+            if (showAll) {
+                // every possible word, alphabetically; found words take the finder's color
+                for (const w of [...game.words].sort()) chip(w, w in game.found ? "f" + game.found[w] : "none");
+                $("foundHead").textContent = `Words · ${order.length} of ${game.words.length} found`;
+            } else {
+                for (const w of order) chip(w, "f" + game.found[w]);
+                if (game.over) for (const w of game.words.filter(w => !(w in game.found)).sort()) chip(w, "none");
+                $("foundHead").textContent = game.over && order.length < game.words.length
+                    ? `Found ${order.length} of ${game.words.length} · dashed words were never found`
+                    : `Found ${order.length} of ${game.words.length}`;
+            }
+            const msg = $("msg");
+            if (game.over) {
+                const [a, b] = game.scores;
+                const head = a === b ? `Tie game, ${a}–${b}.` : `${nameOf(a > b ? 0 : 1)} ${game.opp !== "human" && a > b ? "win" : "wins"}, ${Math.max(a, b)}–${Math.min(a, b)}.`;
+                msg.innerHTML = `<strong>${head}</strong>` + (game.last ? `<span class="alt">${game.last}</span>` : "");
+            } else if (game.busy && isAI(game.player) && !game.last) {
+                msg.innerHTML = "The computer is looking for a word…";
+            } else {
+                msg.innerHTML = game.last ? game.last : `<strong>${nameOf(game.player)}</strong>: make a new word in any row, column or diagonal.`;
+            }
+        }
+
+        // ---- swap animation (linear): the two letters slide past each other
+        const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
+        const DUR = REDUCED ? 0 : 500;             // player swaps
+        const AI_DUR = REDUCED ? 0 : 900;        // computer swaps, slower so they are easy to follow
+        const AI_GAP = 450;                                    // pause between computer swaps
+        const AI_WAIT = 2200; // pause before the computer starts its turn
+        let anim = null;
+        function finishAnim() {
+            if (!anim) return;
+            cancelAnimationFrame(anim.raf); const done = anim.done; anim = null;
+            link.style.display = "none";
+            draw();
+            if (done) done();
+        }
+        function animate(mv, before, done, dur = DUR) {
+            const [a, c] = SWAPS[mv], ta = before[a], tc = before[c];
+            gTi.appendChild(tiles[ta].g); gTi.appendChild(tiles[tc].g); // moving letters pass over the others
+            const t0 = performance.now();
+            anim = { raf: 0, done };
+            link.setAttribute("x1", P[a][0]); link.setAttribute("y1", P[a][1]); link.setAttribute("x2", P[c][0]); link.setAttribute("y2", P[c][1]);
+            link.style.display = "";
+            // offset the two paths sideways a little so the letters pass each other instead of overlapping
+            const dx = P[c][0] - P[a][0], dy = P[c][1] - P[a][1], len = Math.hypot(dx, dy), nx = -dy / len * 14, ny = dx / len * 14;
+            const frame = now => {
+                const u = dur ? Math.min(1, (now - t0) / dur) : 1, bump = Math.sin(Math.PI * u);
+                place(ta, P[a][0] + dx * u + nx * bump, P[a][1] + dy * u + ny * bump);
+                place(tc, P[c][0] - dx * u - nx * bump, P[c][1] - dy * u - ny * bump);
+                if (u >= 1) { finishAnim(); return; }
+                anim.raf = requestAnimationFrame(frame);
+            };
+            frame(t0);
+        }
+
+        // ---- turns
+        let analysis = null; // promise of { par, path }
+        function startTurn() {
+            clearTimeout(aiTimer);
+            game.rotations = 0; game.lastMove = null; game.rewinds = REWINDS; game.turnStart = game.pos.slice();
+            if (!remaining(3).length && !remaining(4).length) { endGame("All words found."); return; }
+            game.par = null;
+            const g = game, ai = isAI(game.player);
+            if (ai) game.busy = true;
+            analysis = analyzeAsync(stateStr(), remaining(3), remaining(4), ai ? "hard:" + game.bestRate / 100 : null)
+                .then(res => { if (game === g) { game.par = res.par; updatePanel(); } return res; });
+            draw();
+            if (ai) {
+                const delay = AI_WAIT;
+                analysis.then(res => {
+                    if (game !== g) return;
+                    aiTimer = setTimeout(() => playAI(res.path), delay);
+                });
+            }
+        }
+        function playAI(path) {
+            if (!path || !path.length) { game.busy = false; skipTurn(); return; }
+            let i = 0;
+            const step = () => {
+                doMove(path[i++], false, true);
+                if (i < path.length) aiTimer = setTimeout(step, AI_DUR + AI_GAP);
+            };
+            step();
+        }
+        function newGame() {
+            clearTimeout(aiTimer);
+            if (anim) { cancelAnimationFrame(anim.raf); anim = null; link.style.display = "none"; }
+            const d = deal(target);
+            game = {
+                opp, bestRate, target, first: firstPlayer, start: d.start, words: d.words, pos: [...Array(N).keys()], player: firstPlayer,
+                scores: [0, 0], found: {}, fresh: [], rotations: 0, lastMove: null, rewinds: 0, par: null, skips: 0, turns: 0,
+                busy: false, waiting: false, over: false, finalTurn: false, last: ""
+            };
+            buildTiles(d.start);
+            startTurn();
+        }
+        function newWordsIn(s) {
+            const out = [];
+            lineWords(s).forEach(w => { if (DICT[w.length].has(w) && !(w in game.found) && !out.includes(w)) out.push(w); });
+            return out;
+        }
+        function doMove(mv, isUndo, auto) {
+            if (!game || game.over || game.waiting) return;
+            if (!auto && (game.busy || isAI(game.player))) return;
+            finishAnim();
+            setSel(null);
+            game.fresh = [];
+            const before = game.pos;
+            if (isUndo) { game.lastMove = null; game.rotations--; } else { game.lastMove = mv; game.rotations++; }
+            game.pos = PERMS[mv].map(i => before[i]);
+            const words = isUndo ? [] : newWordsIn(stateStr());
+            if (words.length) game.busy = true;
+            updatePanel();
+            let animDone = false, scored = null;
+            const settle = () => { if (animDone && scored) { const f = scored; scored = null; f(); } };
+            animate(mv, before, () => { animDone = true; settle(); }, auto ? AI_DUR : DUR);
+            if (words.length) {
+                const g = game, rotations = game.rotations;
+                Promise.resolve().then(() => {
+                    if (game !== g) return;
+                    const earned = words.reduce((a, w) => a + w.length, 0);
+                    const pts = Math.max(0, earned - rotations); // each swap costs a point; a turn never scores below 0
+                    const who = game.player;
+                    scored = () => {
+                        words.forEach(w => { game.found[w] = who; });
+                        game.fresh = words.slice();
+                        game.scores[who] += pts;
+                        game.turns++;
+                        const list = words.map(w => w.toUpperCase()).join(" and ");
+                        const parNote = `${earned} for the word${words.length > 1 ? "s" : ""}, minus ${rotations} for ${rotations === 1 ? "the swap" : rotations + " swaps"}`;
+                        game.last = `<strong>${nameOf(who)} spelled ${list}: +${pts}</strong><span class="alt">${parNote}</span>`;
+                        game.skips = 0; game.busy = false;
+                        afterTurn(who);
+                    };
+                    settle();
+                });
+            }
+        }
+        // decide whether the game ends after `who` finished a turn; otherwise pass the turn
+        function afterTurn(who) {
+            const T = game.target;
+            if (!remaining(3).length && !remaining(4).length) { endGame("All words found."); return; }
+            if (game.finalTurn) { endGame(""); return; }
+            if (T && game.scores[who] >= T) {
+                if (who === game.first) {
+                    game.finalTurn = true;
+                    game.last = game.last.replace(/<span class="alt">.*<\/span>/, "") +
+                        `<span class="alt">${nameOf(who)} reached ${T}. ${nameOf(1 - who)} ${verb(1 - who, "get", "gets")} the last turn.</span>`;
+                } else { endGame(""); return; }
+            }
+            game.player = 1 - who;
+            startTurn();
+        }
+
+        function skipTurn() {
+            if (game.over || game.waiting) return;
+            finishAnim();
+            clearTimeout(aiTimer);
+            const who = game.player;
+            game.pos = game.turnStart.slice();
+            game.busy = false;
+            game.turns++;
+            if (game.finalTurn) { game.last = `${nameOf(who)} skipped the last turn.`; endGame(game.last); return; }
+            game.last = `<strong>${nameOf(who)} skipped.</strong>`;
+            game.player = 1 - who;
+            startTurn();
+        }
+        function endGame(note) {
+            finishAnim(); clearTimeout(aiTimer);
+            game.over = true; game.busy = false; game.waiting = false;
+            game.last = note || "";
+            draw();
+        }
+
+        // ---- input: tap a letter, then another letter to swap them; tap the same letter again to cancel
+        function svgPoint(e) {
+            const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+            return pt.matrixTransform(svg.getScreenCTM().inverse());
+        }
+        function nodeAt(e) {
+            const q = svgPoint(e); let best = -1, bd = Infinity;
+            P.forEach((c, i) => { const d = Math.hypot(c[0] - q.x, c[1] - q.y); if (d < bd) { bd = d; best = i; } });
+            return bd < S * 0.5 ? best : -1;
+        }
+        let sel = null;
+        function setSel(n) {
+            sel = n;
+            if (n == null) { selRing.style.display = "none"; return; }
+            selRing.setAttribute("cx", P[n][0]); selRing.setAttribute("cy", P[n][1]); selRing.style.display = "";
+        }
+        function tapNode(n) {
+            if (!game || !humanTurn()) return;
+            if (sel == null) { setSel(n); return; }
+            if (sel === n) { setSel(null); return; }
+            const mv = swapIndex(sel, n); setSel(null);
+            doMove(mv, false);
+        }
+        let press = null;
+        svg.addEventListener("pointerdown", e => {
+            if (e.pointerType === "mouse") e.preventDefault(); // keep focus off the board; touch stays free to scroll
+            if (e.button !== 0) return;
+            const n = nodeAt(e); if (n < 0) return;
+            press = { n, x: e.clientX, y: e.clientY };
+        });
+        svg.addEventListener("pointermove", e => {
+            if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 10) press = null;
+        });
+        svg.addEventListener("pointerup", () => { if (press) { const n = press.n; press = null; tapNode(n); } });
+        svg.addEventListener("pointercancel", () => { press = null; });
+
+        $("undo").addEventListener("click", () => { if (game.lastMove != null) doMove(game.lastMove, true); });
+        $("skip").addEventListener("click", () => { if (humanTurn()) skipTurn(); });
+        $("next").addEventListener("click", newGame);
+        $("optOpp").addEventListener("change", e => { opp = e.target.value; $("skillBox").hidden = opp !== "ai"; try { localStorage.setItem("duel-opp", opp); } catch (x) { } newGame(); });
+        $("optRate").addEventListener("input", e => { bestRate = +e.target.value; $("rateOut").textContent = bestRate + "%"; if (game) game.bestRate = bestRate; try { localStorage.setItem("duel-rate", String(bestRate)); } catch (x) { } });
+
+        newGame();
+    </script>
+
+</body>
+
+</html>
